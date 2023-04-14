@@ -27,8 +27,6 @@ def SaveRectangles():
             }
             rectangle_json.append(_rect)
 
-
-
         rectangles_json.append(rectangle_json)
 
     with open(target_file_name,'w') as file:
