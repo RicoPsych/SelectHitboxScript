@@ -1,0 +1,5 @@
+{
+    "frames_dir":"textures",
+    "target":"Hitboxes.json",
+    "load":"Hitboxes.json"
+}
