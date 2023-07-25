@@ -165,3 +165,12 @@ while key != 27 and cv2.getWindowProperty('image', 0) >= 0: #and i < len(img_lis
         index = index %len(img_list)
 # close the window
 cv2.destroyAllWindows()
+
+#CONTROLS
+#LMB - set rectangles
+#RMB - delete latest rectangle
+#A,D - change image
+#S - Save
+#Q - delete rectangles in frame
+#E - as above and go to next frame
+#Esc - exit
