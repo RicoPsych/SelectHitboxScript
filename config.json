@@ -1,5 +1,5 @@
 {
-    "frames_dir":"source/textures",
-    "target":"source/Hitboxes.json",
-    "load":"source/Hitboxes.json"
+    "source":"source",
+    "target":"target",
+    "hitboxFileName":"Hurtboxes"
 }

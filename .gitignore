@@ -2,6 +2,7 @@ Hitboxes.json
 setHitbox.spec
 setHitbox.exe
 source/
+target/
 textures/
 build/
 dist/

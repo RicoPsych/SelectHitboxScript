@@ -1,176 +1,300 @@
 # importing the module
+from collections import defaultdict
+import itertools
+import multiprocessing
+import os
 import cv2
 import json
 import numpy as np
-from os import listdir
 
-x1 = 0 ;y1 = 0 ;x2 = 0;y2 = 0 #new
-#rectangles_in_frame = []
 
-def SaveRectangles():
-    rectangles_json = []
+
+def LoadConfig():
+    global SOURCE_DIRECTORY, TARGET_DIRECTORY, HITBOX_FILE_NAME
+    config_dict = json.load(open("config.json"))
+    SOURCE_DIRECTORY = config_dict["source"]
+    TARGET_DIRECTORY = config_dict["target"]
+    HITBOX_FILE_NAME = config_dict["hitboxFileName"] + ".json"
+
+def RecursiveDirectoryPngSearch(dir,list):
+    currentDirectory = os.listdir(dir)
+    pngList =  [child for child in currentDirectory if (".png" in child )]
+    pngList = [dir+"/" + x for x in pngList]
+    list = list + pngList #Add new JsonFiles
+
+    currentDirectory =  [child for child in currentDirectory if ("." not in child )] #Get Folders from 
+    for childDirectory in currentDirectory:
+        list = RecursiveDirectoryPngSearch(dir+"/"+childDirectory,list)
+    return list
+
+#FilePaths
+def GetActionPartDirectoryPath(fullPath):
+    return fullPath.replace("/textures/"+fullPath.split("/")[-1], "")
+
+
+
+def DirectoriesTree(allImageList):
+    mainDirectories = defaultdict(list)
+#   dict {
+#        "actionPartPath": [actionPartFrames]
+#        }
+    for path in allImageList:
+        actionPartDirectoryPath = GetActionPartDirectoryPath(path)
+        mainDirectories[actionPartDirectoryPath].append(path)
+    return mainDirectories
+
+##LOAD
+
+def LoadImage(path):
+    img = cv2.imread(path,cv2.IMREAD_UNCHANGED)
+    bgr = img[:,:,:3]
+    alpha = img[:,:,3]
+    baseImage = bgr.copy()
+    baseImage[alpha==0] = (255)
+
+    return baseImage # RETURN BASE_IMG 
+
+
+
+
+#SAVE RECTANGLES TO JSON
+def ConvertRectangleToJsonRectangle(rectangle):
+    return {
+        "X":rectangle[0],
+        "Y":rectangle[1],
+        "Width":rectangle[2],
+        "Height":rectangle[3]
+
+        # "X":rectangle[0][0],
+        # "Y":rectangle[0][1],
+        # "Width":rectangle[1][0] - rectangle[0][0], #x2 - x1
+        # "Height":rectangle[1][1] - rectangle[0][1]
+    }
+
+def SaveRectanglesToFile(path, frames):
+    rectanglesJson = []
     last_full_frame = []
 
     for frame in frames:
-        rectangle_json = []
+        frameRectanglesJson = []
+        #JESLI FRAME NIE MA PROSTOKATOW _> UZYJ PROSTOKATOW Z POPRZEDNIEGO FRAMEA
         if len(frame) == 0:
             frame = last_full_frame
         else:
             last_full_frame = frame
 
-        for rect in frame:
-            _rect = {
-                "X":rect[0][0],
-                "Y":rect[0][1],
-                "Width":rect[1][0] - rect[0][0], #x2 - x1
-                "Height":rect[1][1] - rect[0][1]
-            }
-            rectangle_json.append(_rect)
+        for rectangle in frame:
+            frameRectanglesJson.append(ConvertRectangleToJsonRectangle(rectangle))
 
-        rectangles_json.append(rectangle_json)
+        rectanglesJson.append(frameRectanglesJson)
 
-    with open(target_file_name,'w') as file:
-        json.dump(rectangles_json, file)
+    newDirectoryPath = path.replace(SOURCE_DIRECTORY,TARGET_DIRECTORY)+"/"
+    if not os.path.exists(newDirectoryPath):
+        os.makedirs(newDirectoryPath)
 
-def RectanglesAndFrameNr():
-    global index,frames,img_hit
-    for rect in frames[index]: #rectangles_in_frame:
-        cv2.rectangle(img_hit, (rect[0][0],rect[0][1]),(rect[1][0],rect[1][1] ) , (0,0,255) ,1)     
-    cv2.putText(img_hit,str(index),(0,10),cv2.FONT_HERSHEY_SIMPLEX,0.25,(255,0,0),1,cv2.LINE_AA)       
-
-def PrintRectangles():
-    global index,img_hit
-    img_hit = base_img.copy()
-    RectanglesAndFrameNr()
-    cv2.imshow('image', img_hit)
-
-def PrintNewRectangle(x,y):
-    global img_hit
-    RectanglesAndFrameNr()
-    cv2.rectangle(img_hit, (x1,y1),(x,y) , (255,0,0) ,1)
-    cv2.imshow('image', img_hit)
-    img_hit = base_img.copy()
-
-mouse_press = False
-
-def MouseEvents(event, x, y, flags, params):
-    global x1,y1,x2,y2,index,mouse_press
-    global frames
-    if event == cv2.EVENT_LBUTTONDOWN:
-        mouse_press = True
-        print(x, ' ', y)
-        x1 = x
-        y1 = y
-        #cv2.imshow('image', img_hit)
-    if event == cv2.EVENT_MOUSEMOVE and mouse_press == True:
-        PrintNewRectangle(x,y)
-    elif event==cv2.EVENT_LBUTTONUP:
-        mouse_press = False
-        print(x, ' ', y)
-        if x > x1:
-            x2 = x
-        else: #x1 > x
-            x2 = x1
-            x1 = x
-        if y > y1:
-            y2 = y
-        else: #y1 > y
-            y2 = y1
-            y1 = y
-        frames[index].append(((x1,y1),(x2,y2)))
-        PrintRectangles() 
-    elif event==cv2.EVENT_RBUTTONUP: 
-        if len(frames[index]) > 0:
-            print("delete rectangle")
-            frames[index].pop()
-            PrintRectangles() 
-
-def LoadImage(directory,filename):
-    global img_hit,base_img
-    img = cv2.imread(directory+"\\"+filename,cv2.IMREAD_UNCHANGED)
-    bgr = img[:,:,:3]
-    alpha = img[:,:,3]
-    base_img = bgr.copy()
-    base_img[alpha==0] = (255)
-    img_hit = base_img.copy()
-
-def LoadConfig():
-    global directory,target_file_name,load_file_name
-    config_dict = json.load(open("config.json"))
-    directory = config_dict["frames_dir"]
-    target_file_name = config_dict["target"]
-    load_file_name = config_dict["load"]
+    with open(newDirectoryPath+HITBOX_FILE_NAME,'w+') as file:
+        json.dump(rectanglesJson, file)
 
 
+##PRINTING RECTANGLES ON IMAGES
 
-#                       MAIN
-LoadConfig()
+def AddRectanglesToImage(image,rectangles):
+    for rect in rectangles: #rectangles_in_frame:
+        cv2.rectangle(image, (rect[0],rect[1]), ( rect[0]+rect[2],rect[1]+rect[3] ) , (0,0,255) ,1)     
+    #cv2.putText(image,str(index),(0,10),cv2.FONT_HERSHEY_SIMPLEX,0.25,(255,0,0),1,cv2.LINE_AA)
+    return image       
 
-# reading the images from directory
-#directory = input()
-print(listdir(directory))
-img_list = [f for f in listdir(directory) if ".png" in f]
-if len(img_list) <= 0:
-    exit()
-frames = [[] for i in range(len(img_list))]
+def PrintRectangles(image,rectangles):
+    imageWithRectangles = AddRectanglesToImage(image.copy(),rectangles)
+    cv2.imshow('image', imageWithRectangles)
 
-#get first image
-LoadImage(directory,img_list[0])
-cv2.imshow('image', img_hit)
-cv2.setMouseCallback('image', MouseEvents)
 
-#Load from file
-try:
-    rectangles_dict= json.load(open(load_file_name))
-    index = 0
-    for frame in rectangles_dict:
-        
-        rectangles_in_frame = []
-        for rect in frame:
-            rectangles_in_frame.append(((rect["X"],rect["Y"]),(rect["X"] + rect["Width"],rect["Y"]+rect["Height"])))
-        frames[index] = rectangles_in_frame
-        index+=1
-except:
-    print("File not found or wrong content")
-# MAIN LOOP
-index = 0
-key = 0
-# wait for esc key to be pressed to exit
-while key != 27 and cv2.getWindowProperty('image', 0) >= 0: #and i < len(img_list)
-    LoadImage(directory,img_list[index])
-    PrintRectangles()
+###HITBOX RECTANGLE CREATION
+def CheckIfRectangleInHitbox(img,width,height,x,y):
+    count = 0
+    threshold = 0.1
+    for i in range(int(height)):
+        for n in range(int(width)):
+            pixel = img[int(y+i)][int(x+n)]
+            if  pixel != 255:
+                count+=1
 
-    key = cv2.waitKey(0) 
-    #back
-    if key == ord("a"):
-        index-=1
-        index = index%len(img_list)
-    #save
-    if key == ord("s"):
-        SaveRectangles()
-        print("save")
-    #next
-    if key == ord("d"):
-        index+=1
-        index = index %len(img_list)
-    #Delete all rectangles in frame
-    if key == ord("q"):
-        for i in range(len(frames[index])):
-            frames[index].pop()
-    #Delete all rectangles and go to next frame
-    if key == ord("e"):
-        for i in range(len(frames[index])):
-            frames[index].pop()
-        index+=1
-        index = index %len(img_list)
-# close the window
-cv2.destroyAllWindows()
+    return count > width*height*threshold
 
-#CONTROLS
-#LMB - set rectangles
-#RMB - delete latest rectangle
-#A,D - change image
-#S - Save
-#Q - delete rectangles in frame
-#E - as above and go to next frame
-#Esc - exit
+# Multiprocessing??? Useless?
+# def CheckRectangleRowInHitbox(rowIndex , height, width, horizontal_rect_count, img_gray):
+#     hitbox_rectangles=[]
+#     y = rowIndex*height
+#     for n in range(horizontal_rect_count):
+#         x = n * width
+#         if CheckIfRectangleInHitbox(img_gray,width,height,x, y):
+#             hitbox_rectangles.append((x,y,width,height))
+#     return hitbox_rectangles
+
+def CreateRectanglesFromFrame(image):
+
+    img_gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Convert to binary image by thresholding
+    _, threshold = cv2.threshold(img_gray, 245, 255, cv2.THRESH_BINARY_INV)
+    
+    horizontal_rect_count = 40
+    vertical_rect_count = 30
+    
+    height = len(img_gray)/vertical_rect_count
+    width = len(img_gray[0])/horizontal_rect_count
+
+    # #pool = multiprocessing.Pool()
+    # pool = multiprocessing.Pool(processes=4)
+
+    # args = [(i , height, width, horizontal_rect_count, img_gray) for i in range(vertical_rect_count)]
+    # results = pool.starmap(CheckRectangleRowInHitbox,args)
+
+    # hitbox_rectangles = list(itertools.chain.from_iterable(results))
+    hitbox_rectangles=[]
+    for i in range(vertical_rect_count):
+        y = i*height
+        for n in range(horizontal_rect_count):
+            x = n * width
+            if CheckIfRectangleInHitbox(img_gray,width,height,x, y):
+                hitbox_rectangles.append((int(x),int(y),int(width),int(height)))
+    #           cv2.rectangle(image, (int(x),int(y)),(int(x+width),int(y+height) ) , (0,0,255) ,1) 
+    
+    #UPDATE_PROGRESS()   
+
+    return hitbox_rectangles 
+
+#Multiprocessing
+def CreateHitboxForImage(imagePath):
+    image = LoadImage(imagePath)
+    rectanglesList = CreateRectanglesFromFrame(image)
+#    PRINT_PROGRESS()
+    return rectanglesList
+
+def CreateHitboxForActionPart(imagesPathList):
+    pool = multiprocessing.Pool()
+    pool = multiprocessing.Pool(processes=8)
+    hitboxesList = pool.map(CreateHitboxForImage,imagesPathList)
+    #SUM RECTANGLES HERE
+    return [SumHitboxRectanglesHorizontal(rectangleList) for rectangleList in hitboxesList]
+    #return hitboxesList
+
+def CreateActionPartsDictionaryWithHitboxes(actionsPartsDictionary):         
+    actionsPartsHitboxes = defaultdict(list)
+#   dict {
+#        "actionPartPath": [frames[rectangles]]
+#        }
+    for actionPart in actionsPartsDictionary:
+        actionsPartsHitboxes[actionPart] = CreateHitboxForActionPart(actionsPartsDictionary[actionPart])
+        UPDATE_PROGRESS()
+        PRINT_PROGRESS()
+
+    return actionsPartsHitboxes
+
+#SUMMING 
+def SumHitboxRectanglesHorizontal(hitboxRectangles):
+    summedRectangles = []
+    rectangleRows = defaultdict(list)
+
+    for rectangle in hitboxRectangles:
+        rectangleRows[rectangle[1]].append(rectangle)
+
+    for row in rectangleRows:
+        rowRect = (rectangleRows[row][0][0],
+                rectangleRows[row][0][1], 
+                rectangleRows[row][-1][0]-rectangleRows[row][0][0] + rectangleRows[row][-1][2],
+                rectangleRows[row][0][3])
+
+    ##TODO:possibility to add multiple row rectangles if there is a gap ???
+
+        summedRectangles.append(rowRect)
+
+    return summedRectangles
+
+### PROGRESS PRINT
+
+def UPDATE_PROGRESS():
+    global PROGRESS
+    PROGRESS+=1
+
+def PRINT_PROGRESS():
+    global PROGRESS, TARGET_VALUE
+    os.system("cls")
+    print(PROGRESS/TARGET_VALUE)
+
+###              MAIN
+def Main():
+    global PROGRESS, TARGET_VALUE
+    PROGRESS = 0
+
+    LoadConfig()
+    
+    characters = os.listdir(SOURCE_DIRECTORY)
+    print(characters)
+
+    allImageList = []
+    allImageList = RecursiveDirectoryPngSearch(SOURCE_DIRECTORY,allImageList)
+
+
+    if len(allImageList) <= 0:
+        exit()
+
+    actionsPartsPathsDictionary = DirectoriesTree(allImageList)
+    
+    TARGET_VALUE = len(actionsPartsPathsDictionary)
+
+    actionsPartsHitboxesDictionary = CreateActionPartsDictionaryWithHitboxes(actionsPartsPathsDictionary)
+
+
+    for actionPart in actionsPartsHitboxesDictionary:
+        SaveRectanglesToFile(actionPart,actionsPartsHitboxesDictionary[actionPart])
+
+    # 2nd LOOP -> Review hitboxes
+    actionIndex = 0
+    frameIndex = 0
+    
+
+    actionParts = list(actionsPartsPathsDictionary.keys())
+
+
+    currentImage = LoadImage(actionsPartsPathsDictionary[actionParts[actionIndex]][frameIndex])
+    currentImageHitboxes = actionsPartsHitboxesDictionary[actionParts[actionIndex][frameIndex]]
+    cv2.imshow('image', currentImage)
+
+    key = 0
+    # wait for esc key to be pressed to exit
+    while key != 27 and cv2.getWindowProperty('image', 0) >= 0: #and i < len(img_list)
+
+        currentImage = LoadImage(actionsPartsPathsDictionary[actionParts[actionIndex]][frameIndex])
+        currentImageHitboxes = actionsPartsHitboxesDictionary[actionParts[actionIndex]][frameIndex]
+        PrintRectangles(currentImage,currentImageHitboxes)
+
+        key = cv2.waitKey(0) 
+        #back frame
+        if key == ord("a"):
+            frameIndex-=1
+        #next frame
+        if key == ord("d"):
+            frameIndex+=1
+        frameIndex = frameIndex % len(actionsPartsPathsDictionary[actionParts[actionIndex]])
+
+        #back frame
+        if key == ord("q"):
+            actionIndex-=1
+            frameIndex = 0
+        #next frame
+        if key == ord("e"):
+            actionIndex+=1
+            frameIndex = 0
+
+        actionIndex = actionIndex %len(actionsPartsPathsDictionary)
+
+        #save
+        # if key == ord("s"):
+        #     SaveRectangles()
+        #     print("save")
+
+    # close the window
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    Main()
